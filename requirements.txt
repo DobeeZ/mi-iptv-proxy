@@ -2,4 +2,3 @@ flask
 streamlink
 requests
 gunicorn
-yt-dlp
