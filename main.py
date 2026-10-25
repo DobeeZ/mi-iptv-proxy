@@ -28,13 +28,19 @@ def parse_channel_line(line, current_group):
         cid = kick_match.group(1)
         return {"platform": "kick", "id": cid, "name": f"{cid} (Kick)", "group": current_group}, current_group
 
-    # YouTube Handle (@canal)
+    # YouTube: canal por @arroba
     yt_handle = re.search(r'youtube\.com/(@[a-zA-Z0-9._-]+)', line, re.IGNORECASE)
     if yt_handle:
         cid = yt_handle.group(1)
         return {"platform": "youtube", "id": cid, "name": f"{cid[1:]} (YouTube)", "group": current_group}, current_group
 
-    # YouTube Video o directo único
+    # YouTube: canal por ID (channel/UCxxxx)
+    yt_channel = re.search(r'youtube\.com/(channel/[a-zA-Z0-9_-]+)', line, re.IGNORECASE)
+    if yt_channel:
+        cid = yt_channel.group(1)
+        return {"platform": "youtube", "id": cid, "name": f"{cid.split('/')[1]} (YouTube)", "group": current_group}, current_group
+
+    # YouTube: vídeo o directo concreto
     yt_video = re.search(r'(?:youtube\.com/(?:watch\?v=|live/)|youtu\.be/)([a-zA-Z0-9_-]+)', line, re.IGNORECASE)
     if yt_video:
         vid = yt_video.group(1)
@@ -112,15 +118,15 @@ def stream_kick(channel_id):
 
 @app.route('/live/youtube/<path:channel_id>')
 def stream_youtube(channel_id):
-    if channel_id.startswith("@"):
-        target_url = f"https://www.youtube.com/{channel_id}/live"
-    elif channel_id.startswith("v_"):
+    if channel_id.startswith("v_"):
         target_url = f"https://www.youtube.com/watch?v={channel_id[2:]}"
     else:
-        target_url = f"https://www.youtube.com/{channel_id}"
+        target_url = f"https://www.youtube.com/{channel_id}/live"
 
     try:
-        streams = streamlink.streams(target_url)
+        session = streamlink.Streamlink()
+        session.set_option("http-timeout", 8)
+        streams = session.streams(target_url)
         if "best" in streams:
             return redirect(streams["best"].url, code=302)
     except Exception as e:
