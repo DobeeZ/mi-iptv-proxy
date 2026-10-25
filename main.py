@@ -3,6 +3,7 @@ import re
 from flask import Flask, redirect, Response, request
 import streamlink
 import requests
+import yt_dlp
 
 app = Flask(__name__)
 
@@ -110,7 +111,26 @@ def stream_kick(channel_id):
         
     return "Canal de Kick no disponible o sin emisión", 404
 
-@app.route('/live/youtube/<channel_id>')
+def get_yt_stream_url(target_url):
+    ydl_opts = {
+        'format': 'best',
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(target_url, download=False)
+            if 'entries' in info and info['entries']:
+                info = info['entries'][0]
+            url = info.get('url')
+            if url:
+                return url
+    except Exception as e:
+        print(f"yt-dlp error for {target_url}: {e}")
+    return None
+
+@app.route('/live/youtube/<path:channel_id>')
 def stream_youtube(channel_id):
     if channel_id.startswith("@"):
         target_url = f"https://www.youtube.com/{channel_id}/live"
@@ -119,12 +139,22 @@ def stream_youtube(channel_id):
     else:
         target_url = f"https://www.youtube.com/{channel_id}"
 
+    # Método 1: Streamlink
     try:
         streams = streamlink.streams(target_url)
         if "best" in streams:
             return redirect(streams["best"].url, code=302)
     except Exception as e:
-        print(f"Error en YouTube ({channel_id}): {e}")
+        print(f"Error Streamlink YouTube ({channel_id}): {e}")
+
+    # Método 2: Extracción con yt-dlp
+    try:
+        stream_url = get_yt_stream_url(target_url)
+        if stream_url:
+            return redirect(stream_url, code=302)
+    except Exception as e:
+        print(f"Error yt-dlp YouTube ({channel_id}): {e}")
+
     return "Canal o directo de YouTube no disponible", 404
 
 if __name__ == '__main__':
