@@ -16,14 +16,14 @@ def parse_channel_line(line, current_group):
         new_group = line[1:-1].strip()
         return None, new_group if new_group else "General"
 
-    # Detecta enlace de Twitch
-    twitch_match = re.search(r'twitch\.tv/([a-zA-Z0-9_]+)', line, re.IGNORECASE)
+    # Detecta enlace de Twitch (permite letras, números, guiones y guiones bajos)
+    twitch_match = re.search(r'twitch\.tv/([a-zA-Z0-9_-]+)', line, re.IGNORECASE)
     if twitch_match:
         cid = twitch_match.group(1)
         return {"platform": "twitch", "id": cid, "name": f"{cid} (Twitch)", "group": current_group}, current_group
 
-    # Detecta enlace de Kick
-    kick_match = re.search(r'kick\.com/([a-zA-Z0-9_]+)', line, re.IGNORECASE)
+    # Detecta enlace de Kick (permite letras, números, guiones y guiones bajos)
+    kick_match = re.search(r'kick\.com/([a-zA-Z0-9_-]+)', line, re.IGNORECASE)
     if kick_match:
         cid = kick_match.group(1)
         return {"platform": "kick", "id": cid, "name": f"{cid} (Kick)", "group": current_group}, current_group
@@ -62,7 +62,8 @@ def get_playlist():
         group = ch.get("group", "General")
         
         stream_url = f"{scheme}://{host}/live/{platform}/{channel_id}"
-        m3u_content += f'#EXTINF:-1 group-title="{group}", {display_name}\n'
+        # Se añade tvg-group para forzar la compatibilidad con OTT Navigator y TiviMate
+        m3u_content += f'#EXTINF:-1 tvg-group="{group}" group-title="{group}", {display_name}\n'
         m3u_content += f'{stream_url}\n\n'
         
     return Response(m3u_content, mimetype='text/plain')
