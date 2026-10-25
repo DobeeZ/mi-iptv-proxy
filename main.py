@@ -6,39 +6,44 @@ import requests
 
 app = Flask(__name__)
 
-def parse_channel_line(line):
+def parse_channel_line(line, current_group):
     line = line.strip()
     if not line or line.startswith("#"):
-        return None
+        return None, current_group
+
+    # Si detecta un nombre entre corchetes [Ejemplo], cambia la categoría actual
+    if line.startswith("[") and line.endswith("]"):
+        new_group = line[1:-1].strip()
+        return None, new_group if new_group else "General"
 
     # Detecta enlace de Twitch
     twitch_match = re.search(r'twitch\.tv/([a-zA-Z0-9_]+)', line, re.IGNORECASE)
     if twitch_match:
         cid = twitch_match.group(1)
-        return {"platform": "twitch", "id": cid, "name": f"{cid} (Twitch)"}
+        return {"platform": "twitch", "id": cid, "name": f"{cid} (Twitch)", "group": current_group}, current_group
 
     # Detecta enlace de Kick
     kick_match = re.search(r'kick\.com/([a-zA-Z0-9_]+)', line, re.IGNORECASE)
     if kick_match:
         cid = kick_match.group(1)
-        return {"platform": "kick", "id": cid, "name": f"{cid} (Kick)"}
+        return {"platform": "kick", "id": cid, "name": f"{cid} (Kick)", "group": current_group}, current_group
 
-    return None
+    return None, current_group
 
 def get_channels():
     channels = []
+    current_group = "General"
     if os.path.exists("channels.txt"):
         with open("channels.txt", "r", encoding="utf-8") as f:
             for line in f:
-                ch = parse_channel_line(line)
+                ch, current_group = parse_channel_line(line, current_group)
                 if ch:
                     channels.append(ch)
     
-    # Canales por defecto si no hay nada en channels.txt
     if not channels:
         channels = [
-            {"platform": "twitch", "id": "x9nium", "name": "x9nium (Twitch)"},
-            {"platform": "kick", "id": "x9nium", "name": "x9nium (Kick)"},
+            {"platform": "twitch", "id": "x9nium", "name": "x9nium (Twitch)", "group": "E-Sports"},
+            {"platform": "kick", "id": "x9nium", "name": "x9nium (Kick)", "group": "E-Sports"},
         ]
     return channels
 
@@ -54,9 +59,10 @@ def get_playlist():
         platform = ch["platform"]
         channel_id = ch["id"]
         display_name = ch["name"]
+        group = ch.get("group", "General")
         
         stream_url = f"{scheme}://{host}/live/{platform}/{channel_id}"
-        m3u_content += f'#EXTINF:-1 group-title="{platform.capitalize()}", {display_name}\n'
+        m3u_content += f'#EXTINF:-1 group-title="{group}", {display_name}\n'
         m3u_content += f'{stream_url}\n\n'
         
     return Response(m3u_content, mimetype='text/plain')
