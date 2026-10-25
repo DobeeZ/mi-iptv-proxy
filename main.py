@@ -3,7 +3,12 @@ import re
 from flask import Flask, redirect, Response, request
 import streamlink
 import requests
-import yt_dlp
+
+# Importación protegida: si yt-dlp falla o no está instalado, el servidor NO se cae
+try:
+    import yt_dlp
+except ImportError:
+    yt_dlp = None
 
 app = Flask(__name__)
 
@@ -111,33 +116,6 @@ def stream_kick(channel_id):
         
     return "Canal de Kick no disponible o sin emisión", 404
 
-def get_yt_hls_stream(target_url):
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'skip_download': True,
-    }
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(target_url, download=False)
-            if 'entries' in info and info['entries']:
-                info = info['entries'][0]
-            
-            # Prioridad 1: Obtener la URL direct de manifest HLS (.m3u8)
-            if info.get('hls_url'):
-                return info.get('hls_url')
-            
-            # Prioridad 2: Buscar entre los formatos uno con protocolo m3u8
-            formats = info.get('formats', [])
-            hls_formats = [f for f in formats if f.get('protocol') in ['m3u8', 'm3u8_native']]
-            if hls_formats:
-                return hls_formats[-1].get('url')
-            
-            return info.get('url')
-    except Exception as e:
-        print(f"yt-dlp error ({target_url}): {e}")
-    return None
-
 @app.route('/live/youtube/<path:channel_id>')
 def stream_youtube(channel_id):
     if channel_id.startswith("@"):
@@ -147,18 +125,38 @@ def stream_youtube(channel_id):
     else:
         target_url = f"https://www.youtube.com/{channel_id}"
 
-    # 1. Forzar búsqueda de stream HLS (.m3u8) directo con yt-dlp
-    stream_url = get_yt_hls_stream(target_url)
-    if stream_url:
-        return redirect(stream_url, code=302)
-
-    # 2. Respaldo con Streamlink
+    # Método 1: Intentar primero con Streamlink (rápido y no bloquea el servidor)
     try:
         streams = streamlink.streams(target_url)
         if "best" in streams:
             return redirect(streams["best"].url, code=302)
     except Exception as e:
         print(f"Error Streamlink YouTube ({channel_id}): {e}")
+
+    # Método 2: Respaldo con yt-dlp si está instalado (con tiempo de espera seguro de 8s)
+    if yt_dlp is not None:
+        try:
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'skip_download': True,
+                'socket_timeout': 8,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(target_url, download=False)
+                if info and 'entries' in info and info['entries']:
+                    info = info['entries'][0]
+                if info:
+                    if info.get('hls_url'):
+                        return redirect(info.get('hls_url'), code=302)
+                    formats = info.get('formats', [])
+                    hls_formats = [f for f in formats if f.get('protocol') in ['m3u8', 'm3u8_native']]
+                    if hls_formats:
+                        return redirect(hls_formats[-1].get('url'), code=302)
+                    if info.get('url'):
+                        return redirect(info.get('url'), code=302)
+        except Exception as e:
+            print(f"Error yt-dlp YouTube ({channel_id}): {e}")
 
     return "Canal o directo de YouTube no disponible", 404
 
