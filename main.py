@@ -16,17 +16,29 @@ def parse_channel_line(line, current_group):
         new_group = line[1:-1].strip()
         return None, new_group if new_group else "General"
 
-    # Detecta enlace de Twitch (permite letras, números, guiones y guiones bajos)
+    # Detecta enlace de Twitch
     twitch_match = re.search(r'twitch\.tv/([a-zA-Z0-9_-]+)', line, re.IGNORECASE)
     if twitch_match:
         cid = twitch_match.group(1)
         return {"platform": "twitch", "id": cid, "name": f"{cid} (Twitch)", "group": current_group}, current_group
 
-    # Detecta enlace de Kick (permite letras, números, guiones y guiones bajos)
+    # Detecta enlace de Kick
     kick_match = re.search(r'kick\.com/([a-zA-Z0-9_-]+)', line, re.IGNORECASE)
     if kick_match:
         cid = kick_match.group(1)
         return {"platform": "kick", "id": cid, "name": f"{cid} (Kick)", "group": current_group}, current_group
+
+    # Detecta canal de YouTube por arroba (@canal)
+    yt_handle = re.search(r'youtube\.com/(@[a-zA-Z0-9._-]+)', line, re.IGNORECASE)
+    if yt_handle:
+        cid = yt_handle.group(1)
+        return {"platform": "youtube", "id": cid, "name": f"{cid[1:]} (YouTube)", "group": current_group}, current_group
+
+    # Detecta enlace directo a vídeo o live de YouTube
+    yt_video = re.search(r'(?:youtube\.com/(?:watch\?v=|live/)|youtu\.be/)([a-zA-Z0-9_-]+)', line, re.IGNORECASE)
+    if yt_video:
+        vid = yt_video.group(1)
+        return {"platform": "youtube", "id": f"v_{vid}", "name": f"Live YT ({vid})", "group": current_group}, current_group
 
     return None, current_group
 
@@ -62,7 +74,6 @@ def get_playlist():
         group = ch.get("group", "General")
         
         stream_url = f"{scheme}://{host}/live/{platform}/{channel_id}"
-        # Se añade tvg-group para forzar la compatibilidad con OTT Navigator y TiviMate
         m3u_content += f'#EXTINF:-1 tvg-group="{group}" group-title="{group}", {display_name}\n'
         m3u_content += f'{stream_url}\n\n'
         
@@ -98,6 +109,23 @@ def stream_kick(channel_id):
         print(f"Error en Kick ({channel_id}): {e}")
         
     return "Canal de Kick no disponible o sin emisión", 404
+
+@app.route('/live/youtube/<channel_id>')
+def stream_youtube(channel_id):
+    if channel_id.startswith("@"):
+        target_url = f"https://www.youtube.com/{channel_id}/live"
+    elif channel_id.startswith("v_"):
+        target_url = f"https://www.youtube.com/watch?v={channel_id[2:]}"
+    else:
+        target_url = f"https://www.youtube.com/{channel_id}"
+
+    try:
+        streams = streamlink.streams(target_url)
+        if "best" in streams:
+            return redirect(streams["best"].url, code=302)
+    except Exception as e:
+        print(f"Error en YouTube ({channel_id}): {e}")
+    return "Canal o directo de YouTube no disponible", 404
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
